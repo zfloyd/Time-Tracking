@@ -11,6 +11,7 @@ namespace TimeTracking
 	{
 		public DbSet<Activity> Activities { get; set; }
 		public DbSet<IdleEvent> IdleEvents { get; set; }
+		public DbSet<Group> Groups { get; set; }
 		public DbSet<Program> Programs {get;set;}
 		public DbSet<ProgramWindow> ProgramWindows { get; set; }
 	}

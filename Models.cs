@@ -5,15 +5,28 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace TimeTracking
 {
+	public class Group
+	{
+		[Key]
+		public int GroupID { get; set; }
+		[Required, StringLength(255)]
+		public string Name { get; set; }
+
+		public virtual ICollection<IdleEvent> IdleEvents { get; set; }
+		public virtual ICollection<Program> Programs { get; set; }
+	}
 	public class IdleEvent
 	{
 		[Key]
 		public int IdleEventID { get; set; }
+		public int? GroupID { get; set; }
 		[Required, StringLength(255)]
 		public string Name { get; set; }
 		[Required]
 		public bool DisplayInList { get; set; }
 
+		[ForeignKey("GroupID")]
+		public virtual Group Group { get; set; }
 		public virtual ICollection<Activity> Activities { get; set; }
 	}
 
@@ -21,9 +34,12 @@ namespace TimeTracking
 	{
 		[Key]
 		public int ProgramID { get; set; }
+		public int? GroupID { get; set; }
 		[Required, StringLength(255)]
 		public string Name { get; set; }
 
+		[ForeignKey("GroupID")]
+		public virtual Group Group { get; set; }
 		public virtual ICollection<Activity> Activities { get; set; }
 		public virtual ICollection<ProgramWindow> ProgramWindows { get; set; }
 	}

@@ -27,16 +27,18 @@ namespace TimeTracking
 		private static DateTime? m_LastActivityTime = null;
 
 		private static IntPtr m_TrackingApplicationID = Process.GetCurrentProcess().MainWindowHandle;
-		
+
 		public MainWindow()
 		{
 			InitializeComponent();
 
 			System.Windows.Forms.NotifyIcon notifyIcon = new System.Windows.Forms.NotifyIcon();
-			notifyIcon.Icon = new System.Drawing.Icon("favicon.ico");
+			notifyIcon.Icon = new System.Drawing.Icon("clock.ico");
 			System.Windows.Forms.ContextMenu menu = new System.Windows.Forms.ContextMenu();
-			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("E&xit", Exit_Click));
 			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Today's Activity", TodaysActivity_Click));
+			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Edit Program Groups", ProgramGroups_Click));
+			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Edit Idle Event Groups", IdleGroups_Click));
+			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("E&xit", Exit_Click));
 			notifyIcon.ContextMenu = menu;
 			notifyIcon.Visible = true;
 
@@ -148,6 +150,8 @@ namespace TimeTracking
 			context.SaveChanges();
 
 			CommonIdleEvent(idleEvent.IdleEventID);
+
+			uxNewEventName.Text = string.Empty;
 		}
 
 		protected void uxActiveWindowSubmit_Click(object sender, RoutedEventArgs e)
@@ -192,17 +196,21 @@ namespace TimeTracking
 		{
 			try
 			{
-				List<Activity> activities = context.Activities.Include("Program").Include("ProgramWindow").Include("IdleEvent").Where(s => s.Started >= start && s.Started <= end && s.Ended.HasValue).ToList();
+				List<Activity> activities = context.Activities.Include("Program").Include("Program.Group").Include("ProgramWindow").Include("IdleEvent").Include("IdleEvent.Group").Where(s => s.Started >= start && s.Started <= end && s.Ended.HasValue).ToList();
 				List<Activity> computerActivities = activities.Where(s => s.ProgramID.HasValue).ToList();
 				List<Activity> idleActivities = activities.Where(s => s.IdleEventID.HasValue).ToList();
 
-				Dictionary<string, double> activityTime = computerActivities.GroupBy(s => s.Program.Name).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
+				Dictionary<string, double> activityTime = computerActivities.GroupBy(s => (s.Program.GroupID.HasValue ? s.Program.Group.Name : s.Program.Name)).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
 
-				string report = "Computer Activities" + Environment.NewLine;
+				double totalTimeSpent = activities.Sum(s=>(s.Ended.Value - s.Started).TotalSeconds);
+				double computerTime = computerActivities.Sum(s => (s.Ended.Value - s.Started).TotalSeconds);
+				double idleTime = idleActivities.Sum(s => (s.Ended.Value - s.Started).TotalSeconds);
+
+				string report = "Computer Activities - " + (computerTime / totalTimeSpent).ToString("P") + Environment.NewLine;
 				report += string.Join(Environment.NewLine, activityTime.OrderByDescending(s => s.Value).Select(s => s.Key + ": " + FormatSeconds(s.Value)).ToList());
 
-				activityTime = idleActivities.GroupBy(s => s.IdleEvent.Name).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
-				report += Environment.NewLine + Environment.NewLine + "Idle Activities" + Environment.NewLine;
+				activityTime = idleActivities.GroupBy(s => (s.IdleEvent.GroupID.HasValue ? s.IdleEvent.Group.Name : s.IdleEvent.Name)).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
+				report += Environment.NewLine + Environment.NewLine + "Idle Activities - " + (idleTime / totalTimeSpent).ToString("P") + Environment.NewLine;
 				report += string.Join(Environment.NewLine, activityTime.OrderByDescending(s => s.Value).Select(s => s.Key + ": " + FormatSeconds(s.Value)).ToList());
 
 				MessageBox.Show(report);
@@ -232,6 +240,77 @@ namespace TimeTracking
 				m_CurrentActivity.Ended = DateTime.Now;
 				context.SaveChanges();
 			}
+		}
+
+		private static bool m_EditingProgramGroups = false;
+
+		private void ProgramGroups_Click(object Sender, EventArgs e)
+		{
+			IdleWindow.Visibility = System.Windows.Visibility.Visible;
+			uxGroupPH.Visibility = System.Windows.Visibility.Visible;
+			uxIdlePH.Visibility = System.Windows.Visibility.Collapsed;
+
+			uxGroups.ItemsSource = context.Programs.Select(s => new ProgramGroupKVP { ProgramName = s.Name, GroupName = s.GroupID.HasValue ? s.Group.Name : "" }).OrderBy(s => s.GroupName).ToList();
+			m_EditingProgramGroups = true;
+		}
+
+		private void IdleGroups_Click(object Sender, EventArgs e)
+		{
+			IdleWindow.Visibility = System.Windows.Visibility.Visible;
+			uxGroupPH.Visibility = System.Windows.Visibility.Visible;
+			uxIdlePH.Visibility = System.Windows.Visibility.Collapsed;
+
+			uxGroups.ItemsSource = context.IdleEvents.Select(s => new ProgramGroupKVP { ProgramName = s.Name, GroupName = s.GroupID.HasValue ? s.Group.Name : "" }).OrderBy(s => s.GroupName).ToList();
+			m_EditingProgramGroups = false;
+		}
+
+		public class ProgramGroupKVP
+		{
+			public string ProgramName { get; set; }
+			public string GroupName { get; set; }
+		}
+
+		protected void uxGroupSave_Click(object sender, RoutedEventArgs e)
+		{
+			try
+			{
+				foreach (ProgramGroupKVP item in uxGroups.Items)
+				{
+					Group groupEntity = null;
+					if (!String.IsNullOrEmpty(item.GroupName))
+					{
+						groupEntity = context.Groups.FirstOrDefault(s => s.Name == item.GroupName);
+						if (groupEntity == null)
+						{
+							groupEntity = new Group { Name = item.GroupName };
+							context.Groups.Add(groupEntity);
+							context.SaveChanges();
+						}
+
+						if (m_EditingProgramGroups)
+						{
+							context.Programs.Where(s => s.Name == item.ProgramName).ToList().ForEach(s =>
+							{
+								s.GroupID = groupEntity == null ? null : (int?)groupEntity.GroupID;
+							});
+						}
+						else
+						{
+							context.IdleEvents.Where(s => s.Name == item.ProgramName).ToList().ForEach(s =>
+							{
+								s.GroupID = groupEntity == null ? null : (int?)groupEntity.GroupID;
+							});
+						}
+					}
+				}
+				context.SaveChanges();
+			}
+			catch (Exception ex)
+			{
+			}
+			IdleWindow.Visibility = System.Windows.Visibility.Hidden;
+			uxGroupPH.Visibility = System.Windows.Visibility.Collapsed;
+			uxIdlePH.Visibility = System.Windows.Visibility.Visible;
 		}
 
 		private void TodaysActivity_Click(object Sender, EventArgs e)
