@@ -1,14 +1,14 @@
 ﻿<Window x:Class="TimeTracking.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="What Were You Doing?" Height="350" Width="400" Name="IdleWindow" Background="#d9edf7" Visibility="Hidden" Topmost="True">
+        Title="What Were You Doing?" Height="400" Width="400" Name="IdleWindow" Background="#d9edf7" Visibility="Hidden" Topmost="True">
 	<StackPanel>
 		<StackPanel Name="uxIdlePH">
-			<ScrollViewer Height="250">
+			<ScrollViewer Height="275">
 				<ItemsControl Name="uxIdleEvents">
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
-							<Button Tag="{Binding IdleEventID}" Content="{Binding Name}" Click="uxOldEventSubmit_Click"  Margin="0 0 0 5" Width="100"></Button>
+							<Button Tag="{Binding IdleEventID}" Content="{Binding Name}" Click="uxOldEventSubmit_Click"  Margin="0 0 0 5" Width="150"></Button>
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>

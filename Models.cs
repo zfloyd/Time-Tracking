@@ -37,6 +37,8 @@ namespace TimeTracking
 		public int? GroupID { get; set; }
 		[Required, StringLength(255)]
 		public string Name { get; set; }
+		[StringLength(255)]
+		public string ProcessName { get; set; }
 
 		[ForeignKey("GroupID")]
 		public virtual Group Group { get; set; }

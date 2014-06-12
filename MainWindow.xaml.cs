@@ -9,9 +9,6 @@ using System.Windows.Threading;
 
 namespace TimeTracking
 {
-	/// <summary>
-	/// Interaction logic for MainWindow.xaml
-	/// </summary>
 	public partial class MainWindow : Window
 	{
 		private static Activity m_CurrentActivity;
@@ -20,7 +17,7 @@ namespace TimeTracking
 
 		private static string m_CurrentProcess = string.Empty;
 
-		private static TimeSpan m_ActivityThreshold = TimeSpan.FromSeconds(30);
+		private static TimeSpan m_ActivityThreshold = TimeSpan.FromSeconds(60);
 
 		private static TrackingContext context = new TrackingContext();
 
@@ -36,6 +33,8 @@ namespace TimeTracking
 			notifyIcon.Icon = new System.Drawing.Icon("clock.ico");
 			System.Windows.Forms.ContextMenu menu = new System.Windows.Forms.ContextMenu();
 			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Today's Activity", TodaysActivity_Click));
+			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Today's Browsing Activity", TodaysBrowsing_Click));
+			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Yesterday's Activity", YesterdaysActivity_Click));
 			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Edit Program Groups", ProgramGroups_Click));
 			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("Edit Idle Event Groups", IdleGroups_Click));
 			menu.MenuItems.Add(new System.Windows.Forms.MenuItem("E&xit", Exit_Click));
@@ -81,12 +80,21 @@ namespace TimeTracking
 								context.SaveChanges();
 							}
 
+							string processName = currentProcessInfo.ProcessName;
 							string programName = newProcess.Split('-')[newProcess.Split('-').Length - 1].Trim();
-							Program currentProgram = context.Programs.FirstOrDefault(s => s.Name == programName);
+							Program currentProgram = context.Programs.FirstOrDefault(s => s.ProcessName == processName);
+							if (currentProgram == null)
+							{
+								currentProgram = context.Programs.FirstOrDefault(s => s.Name == programName);
+								if (currentProgram != null)
+									currentProgram.ProcessName = processName;
+							}
+
 							if (currentProgram == null)
 							{
 								currentProgram = new Program();
 								currentProgram.Name = programName;
+								currentProgram.ProcessName = processName;
 								context.Programs.Add(currentProgram);
 								context.SaveChanges();
 							}
@@ -168,10 +176,17 @@ namespace TimeTracking
 				return;
 			}
 
-			if (m_CurrentActivity != null)
+			try
 			{
-				m_CurrentActivity.Ended = m_LastActivityTime;
-				context.SaveChanges();
+				if (m_CurrentActivity != null)
+				{
+					m_CurrentActivity.Ended = m_LastActivityTime;
+					context.SaveChanges();
+				}
+			}
+			catch (Exception ex)
+			{
+				MessageBox.Show("ActivityID: " + m_CurrentActivity.ActivityID + Environment.NewLine + ex.Message + " : " + Environment.NewLine + ex.StackTrace);
 			}
 
 			m_CurrentActivity = new Activity();
@@ -202,7 +217,7 @@ namespace TimeTracking
 
 				Dictionary<string, double> activityTime = computerActivities.GroupBy(s => (s.Program.GroupID.HasValue ? s.Program.Group.Name : s.Program.Name)).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
 
-				double totalTimeSpent = activities.Sum(s=>(s.Ended.Value - s.Started).TotalSeconds);
+				double totalTimeSpent = activities.Sum(s => (s.Ended.Value - s.Started).TotalSeconds);
 				double computerTime = computerActivities.Sum(s => (s.Ended.Value - s.Started).TotalSeconds);
 				double idleTime = idleActivities.Sum(s => (s.Ended.Value - s.Started).TotalSeconds);
 
@@ -211,6 +226,26 @@ namespace TimeTracking
 
 				activityTime = idleActivities.GroupBy(s => (s.IdleEvent.GroupID.HasValue ? s.IdleEvent.Group.Name : s.IdleEvent.Name)).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
 				report += Environment.NewLine + Environment.NewLine + "Idle Activities - " + (idleTime / totalTimeSpent).ToString("P") + Environment.NewLine;
+				report += string.Join(Environment.NewLine, activityTime.OrderByDescending(s => s.Value).Select(s => s.Key + ": " + FormatSeconds(s.Value)).ToList());
+
+				MessageBox.Show(report);
+			}
+			catch (Exception ex)
+			{
+			}
+		}
+
+		void GetBrowsingActivity(DateTime start, DateTime end)
+		{
+			try
+			{
+				List<Activity> activities = context.Activities.Include("ProgramWindow").Where(s => s.ProgramWindowID.HasValue && s.Started >= start && s.Started <= end && s.Ended.HasValue).ToList();
+
+				Dictionary<string, double> activityTime = activities.GroupBy(s => s.ProgramWindow.Title).ToDictionary(s => s.Key, s => s.Sum(a => (a.Ended.Value - a.Started).TotalSeconds));
+
+				double totalTimeSpent = activities.Sum(s => (s.Ended.Value - s.Started).TotalSeconds);
+
+				string report = "Browsing Activity - " + FormatSeconds(totalTimeSpent) + Environment.NewLine;
 				report += string.Join(Environment.NewLine, activityTime.OrderByDescending(s => s.Value).Select(s => s.Key + ": " + FormatSeconds(s.Value)).ToList());
 
 				MessageBox.Show(report);
@@ -316,6 +351,16 @@ namespace TimeTracking
 		private void TodaysActivity_Click(object Sender, EventArgs e)
 		{
 			GetTodaysActivity();
+		}
+
+		private void YesterdaysActivity_Click(object Sender, EventArgs e)
+		{
+			GetActivity(DateTime.Now.Date.AddDays(-1), DateTime.Now.Date);
+		}
+
+		private void TodaysBrowsing_Click(object Sender, EventArgs e)
+		{
+			GetBrowsingActivity(DateTime.Now.Date, DateTime.Now);
 		}
 
 		private void Exit_Click(object Sender, EventArgs e)
